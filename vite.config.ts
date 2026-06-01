@@ -6,5 +6,5 @@ import react from '@vitejs/plugin-react';
 // are relative, allowing the app to be hosted in any subfolder.
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  base: '/',
 });
