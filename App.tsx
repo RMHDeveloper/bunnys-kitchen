@@ -1,9 +1,44 @@
 
 import React, { useState } from 'react';
 import { AppStatus } from './types';
-import { fetchRecipe, fetchFamousSuggestion, generateRecipeImage } from './services/geminiService';
+import { fetchRecipe, fetchFamousSuggestion, generateRecipeImage, getStoredApiKey, hasApiKey, API_KEY_STORAGE } from './services/geminiService';
 import { Icons, FAMOUS_DELICACIES } from './constants';
 import RecipeDisplay from './components/RecipeDisplay';
+
+const ApiKeyCard: React.FC<{ current: string; onSave: (key: string) => void; onCancel?: () => void }> = ({ current, onSave, onCancel }) => {
+  const [value, setValue] = useState(current);
+  return (
+    <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-xl border border-gray-100 space-y-4 text-left max-w-md mx-auto">
+      <div className="space-y-1">
+        <h3 className="text-lg font-black text-[#1e3a2f] uppercase tracking-tight">OpenRouter API Key</h3>
+        <p className="text-xs text-gray-500 font-medium leading-relaxed">
+          Get a free key at <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer" className="text-[#1e3a2f] underline font-bold">openrouter.ai/settings/keys</a>, paste it below. It stays in this browser only.
+        </p>
+      </div>
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="sk-or-v1-..."
+        className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border-none outline-none focus:outline-none focus:ring-2 focus:ring-[#1e3a2f] text-sm font-bold"
+      />
+      <div className="flex gap-3">
+        <button
+          onClick={() => onSave(value.trim())}
+          disabled={!value.trim()}
+          className="flex-1 py-4 bg-[#1e3a2f] text-white rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em] disabled:opacity-40 hover:bg-[#2d4a3e] transition-colors"
+        >
+          Save Key
+        </button>
+        {onCancel && (
+          <button onClick={onCancel} className="px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em] hover:bg-gray-200 transition-colors">
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const STATES = [
   { id: 'Tamil Nadu', label: 'Tamil Nadu', emoji: '🍱', desc: 'Temple Traditions', color: 'bg-orange-50', text: 'text-orange-900', border: 'hover:border-orange-200' },
@@ -36,6 +71,20 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<any>(null);
   const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
+  const [apiKey, setApiKey] = useState(getStoredApiKey());
+  const [showKeyCard, setShowKeyCard] = useState(!hasApiKey());
+
+  const saveApiKey = (key: string) => {
+    try {
+      if (key) localStorage.setItem(API_KEY_STORAGE, key);
+      else localStorage.removeItem(API_KEY_STORAGE);
+    } catch {
+      /* ignore */
+    }
+    setApiKey(key);
+    setShowKeyCard(false);
+    if (key && (status === AppStatus.ERROR)) setStatus(AppStatus.IDLE);
+  };
 
   const startDiscovery = (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,16 +179,37 @@ const App: React.FC = () => {
           <h1 className="text-xl font-extrabold text-[#1e3a2f] tracking-tight uppercase">Bunny's Kitchen</h1>
         </div>
         
-        {status !== AppStatus.IDLE && (
-          <button 
-            onClick={goBack} 
-            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#1e3a2f] text-white hover:bg-[#2d4a3e] transition-all font-extrabold text-[11px] uppercase tracking-widest shadow-lg shadow-[#1e3a2f]/10"
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowKeyCard(true)}
+            className="px-4 py-2.5 rounded-2xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all font-extrabold text-[11px] uppercase tracking-widest"
+            title="Set OpenRouter API key"
           >
-            <Icons.Back />
-            <span>Back</span>
+            {apiKey ? 'API Key' : 'Add Key'}
           </button>
-        )}
+          {status !== AppStatus.IDLE && (
+            <button
+              onClick={goBack}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#1e3a2f] text-white hover:bg-[#2d4a3e] transition-all font-extrabold text-[11px] uppercase tracking-widest shadow-lg shadow-[#1e3a2f]/10"
+            >
+              <Icons.Back />
+              <span>Back</span>
+            </button>
+          )}
+        </div>
       </header>
+
+      {showKeyCard && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6 fade-in" onClick={() => hasApiKey() && setShowKeyCard(false)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <ApiKeyCard
+              current={apiKey}
+              onSave={saveApiKey}
+              onCancel={hasApiKey() ? () => setShowKeyCard(false) : undefined}
+            />
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto flex flex-col items-center min-h-0">
         {status === AppStatus.IDLE && (
@@ -337,9 +407,17 @@ const App: React.FC = () => {
           <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8 fade-in">
              <div className="text-center space-y-2 max-w-sm">
                 <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Heritage Engine Stall</h3>
-                <p className="text-sm text-gray-500 font-medium">{error || "The kitchen is temporarily closed."}</p>
+                <p className="text-sm text-gray-500 font-medium">
+                  {error?.includes('NO_API_KEY')
+                    ? 'Add your OpenRouter API key to start cooking.'
+                    : (error || "The kitchen is temporarily closed.")}
+                </p>
              </div>
-             <button onClick={reset} className="px-10 py-5 bg-[#1e3a2f] text-white rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em]">Try Again</button>
+             {error?.includes('NO_API_KEY') ? (
+               <ApiKeyCard current={apiKey} onSave={saveApiKey} />
+             ) : (
+               <button onClick={reset} className="px-10 py-5 bg-[#1e3a2f] text-white rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em]">Try Again</button>
+             )}
           </div>
         )}
       </main>

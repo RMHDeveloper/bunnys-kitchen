@@ -14,10 +14,29 @@ const MODELS = [
   "google/gemma-4-31b-it:free",
 ];
 
+export const API_KEY_STORAGE = "bk_openrouter_key";
+
+// Key resolution order:
+//   1. localStorage  — pasted into the app UI, persists per browser
+//   2. VITE_OPENROUTER_API_KEY — build-time env var (.env locally, Vercel dash)
+export const getStoredApiKey = (): string => {
+  try {
+    const fromStorage = localStorage.getItem(API_KEY_STORAGE);
+    if (fromStorage) return fromStorage.trim();
+  } catch {
+    /* localStorage unavailable (private mode, etc.) */
+  }
+  return ((import.meta.env?.VITE_OPENROUTER_API_KEY as string | undefined) || "").trim();
+};
+
+export const hasApiKey = (): boolean => getStoredApiKey().length > 0;
+
 const getApiKey = (): string => {
-  const key = import.meta.env?.VITE_OPENROUTER_API_KEY as string | undefined;
+  const key = getStoredApiKey();
   if (!key) {
-    throw new Error("Missing VITE_OPENROUTER_API_KEY. Add it to your .env file.");
+    throw new Error(
+      "NO_API_KEY: Add your OpenRouter API key to start cooking."
+    );
   }
   return key;
 };
