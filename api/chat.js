@@ -1,16 +1,20 @@
-// Vercel serverless function.
-// Proxies chat-completion requests to OpenRouter so the API key stays on the
-// server (a Vercel env var) and never ships in the browser bundle.
+// Vercel Edge function.
+// Streams chat-completion requests to OpenRouter so the API key stays on the
+// server (a Vercel env var) and tokens reach the browser as they are generated.
 //
 // Required Vercel env var (either name works):
 //   OPENROUTER_API_KEY   ...or...   VITE_OPENROUTER_API_KEY
 
+export const config = { runtime: "edge" };
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-export default async function handler(req, res) {
+export default async function handler(req) {
   if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const key =
@@ -19,38 +23,32 @@ export default async function handler(req, res) {
     "";
 
   if (!key) {
-    res.status(500).json({ error: "Server is missing OPENROUTER_API_KEY" });
-    return;
+    return new Response(
+      JSON.stringify({ error: "Server is missing OPENROUTER_API_KEY" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 
-  // Vercel parses JSON bodies automatically; guard for string just in case.
-  let payload = req.body;
-  if (typeof payload === "string") {
-    try {
-      payload = JSON.parse(payload);
-    } catch {
-      payload = {};
-    }
-  }
+  const body = await req.text();
 
-  try {
-    const upstream = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://bunny-kitchen.thermh.in",
-        "X-Title": "Bunny's Kitchen",
-      },
-      body: JSON.stringify(payload || {}),
-    });
+  const upstream = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://bunny-kitchen.thermh.in",
+      "X-Title": "Bunny's Kitchen",
+    },
+    body,
+  });
 
-    const text = await upstream.text();
-    res.status(upstream.status);
-    res.setHeader("Content-Type", "application/json");
-    res.send(text);
-  } catch (err) {
-    console.error("Proxy error:", err);
-    res.status(502).json({ error: "Upstream request failed" });
-  }
+  // Pass the upstream body straight through (SSE stream or plain JSON).
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "Content-Type":
+        upstream.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-cache",
+    },
+  });
 }

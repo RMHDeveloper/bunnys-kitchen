@@ -72,6 +72,7 @@ const App: React.FC = () => {
   const [suggestion, setSuggestion] = useState<any>(null);
   const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
   const [apiKey, setApiKey] = useState(getStoredApiKey());
+  const [streaming, setStreaming] = useState(false);
 
   const saveApiKey = (key: string) => {
     try {
@@ -121,18 +122,32 @@ const App: React.FC = () => {
     setSelectedState(state);
     setStatus(AppStatus.LOADING);
     setError(null);
+    setRecipe(null);
+    setStreaming(true);
     if (mode === 'normal') setRecipeImageUrl(null);
     try {
       const isAlt = mode === 'alternative';
       const isDiet = mode === 'diet';
-      const result = await fetchRecipe(finalIngredient, state, servings.toString(), language, allergies, isAlt, isDiet);
+      let firstChunk = true;
+      const result = await fetchRecipe(
+        finalIngredient, state, servings.toString(), language, allergies, isAlt, isDiet,
+        (partial) => {
+          setRecipe(partial);
+          if (firstChunk) {
+            firstChunk = false;
+            setStatus(AppStatus.SUCCESS); // show the recipe as it streams in
+          }
+        }
+      );
       setRecipe(result);
       setStatus(AppStatus.SUCCESS);
+      setStreaming(false);
       const dishNameMatch = result.match(/## (.*?) \(/);
       generateRecipeImage(dishNameMatch ? dishNameMatch[1] : finalIngredient).then(img => setRecipeImageUrl(img));
     } catch (err: any) {
       setError(err.message || "Something went wrong.");
       setStatus(AppStatus.ERROR);
+      setStreaming(false);
     }
   };
 
@@ -145,6 +160,7 @@ const App: React.FC = () => {
     setRecipeImageUrl(null);
     setError(null);
     setSuggestion(null);
+    setStreaming(false);
     setStatus(AppStatus.IDLE);
   };
 
@@ -355,17 +371,24 @@ const App: React.FC = () => {
         {status === AppStatus.SUCCESS && recipe && (
           <div className="w-full py-12 md:py-16 fade-in">
             <RecipeDisplay content={recipe} imageUrl={recipeImageUrl} />
-            
-            <div className="max-w-3xl mx-auto px-6 mt-16 flex flex-col gap-6">
+
+            {streaming && (
+              <div className="max-w-3xl mx-auto px-6 mt-8 flex items-center gap-3 text-gray-400">
+                <div className="w-4 h-4 border-2 border-[#1e3a2f] border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-[11px] font-extrabold uppercase tracking-widest">Still writing the recipe...</span>
+              </div>
+            )}
+
+            <div className={`max-w-3xl mx-auto px-6 mt-16 flex flex-col gap-6 transition-opacity ${streaming ? 'opacity-40 pointer-events-none' : ''}`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button 
+                <button
                   onClick={() => handleStateSelect(selectedState, ingredient, 'alternative')}
                   className="flex items-center justify-center p-6 bg-[#1e3a2f] text-white rounded-3xl shadow-lg hover:bg-[#2d4a3e] transition-all transform hover:scale-[1.02]"
                 >
                   <span className="text-sm font-black uppercase tracking-widest">Try another recipe</span>
                 </button>
 
-                <button 
+                <button
                   onClick={() => handleStateSelect(selectedState, ingredient, 'diet')}
                   className="flex items-center justify-center p-6 bg-orange-500 text-white rounded-3xl shadow-lg hover:bg-orange-600 transition-all transform hover:scale-[1.02]"
                 >

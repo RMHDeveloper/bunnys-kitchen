@@ -59,23 +59,65 @@ const isDegenerate = (text: string): boolean => {
   return unique / tokens.length < 0.15;
 };
 
-const buildPayload = (
-  messages: ChatMessage[],
-  options: { temperature?: number; json?: boolean }
-) => ({
+type ChatOptions = {
+  temperature?: number;
+  json?: boolean;
+  stream?: boolean;
+  onProgress?: (partial: string) => void;
+};
+
+const buildPayload = (messages: ChatMessage[], options: ChatOptions) => ({
   models: MODELS,
   messages,
   temperature: options.temperature ?? 0.7,
-  max_tokens: 1400,
+  max_tokens: 1100,
   frequency_penalty: 0.5,
   presence_penalty: 0.3,
   reasoning: { exclude: true }, // don't leak chain-of-thought into content
+  ...(options.stream ? { stream: true } : {}),
   ...(options.json ? { response_format: { type: "json_object" } } : {}),
 });
 
+// Reads an OpenRouter SSE stream, accumulating delta content and reporting
+// progress as it arrives.
+const readStream = async (
+  body: ReadableStream<Uint8Array>,
+  onProgress?: (partial: string) => void
+): Promise<string> => {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === "[DONE]") continue;
+      try {
+        const json = JSON.parse(data);
+        const delta = json.choices?.[0]?.delta?.content;
+        if (delta) {
+          full += delta;
+          onProgress?.(full);
+        }
+      } catch {
+        /* keep-alive comment or partial chunk */
+      }
+    }
+  }
+  return full.trim();
+};
+
 const callOnce = async (
   messages: ChatMessage[],
-  options: { temperature?: number; json?: boolean }
+  options: ChatOptions
 ): Promise<string> => {
   const payload = buildPayload(messages, options);
 
@@ -117,13 +159,17 @@ const callOnce = async (
     throw new Error("Failed to communicate with the heritage engine.");
   }
 
+  if (options.stream && res.body) {
+    return readStream(res.body, options.onProgress);
+  }
+
   const data = await res.json();
   return (data.choices?.[0]?.message?.content ?? "").trim();
 };
 
 const chat = async (
   messages: ChatMessage[],
-  options: { temperature?: number; json?: boolean } = {}
+  options: ChatOptions = {}
 ): Promise<string> => {
   let text = await callOnce(messages, options);
   // One retry if the model got stuck in a repetition loop.
@@ -150,7 +196,8 @@ export const fetchRecipe = async (
   language: string,
   allergies: string,
   isAlternative: boolean = false,
-  isDiet: boolean = false
+  isDiet: boolean = false,
+  onProgress?: (partial: string) => void
 ): Promise<string> => {
   const userPrompt = `
 Language to use for the response: ${language}
@@ -172,7 +219,7 @@ REQUIREMENTS:
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userPrompt },
     ],
-    { temperature: 0.8 }
+    { temperature: 0.8, stream: true, onProgress }
   );
   return text || "No recipe found.";
 };
