@@ -224,16 +224,6 @@ const App: React.FC = () => {
               </h2>
             </div>
 
-            {!apiKey && (
-              <button
-                onClick={() => setShowKeyCard(true)}
-                className="w-full flex items-center justify-between gap-3 bg-[#1e3a2f] text-white px-5 py-4 rounded-2xl text-left hover:bg-[#2d4a3e] transition-colors"
-              >
-                <span className="text-[11px] font-extrabold uppercase tracking-widest">Add your OpenRouter API key to begin</span>
-                <Icons.ArrowRight />
-              </button>
-            )}
-
             <form onSubmit={startDiscovery} className="bg-white p-6 md:p-8 rounded-[40px] shadow-2xl shadow-gray-200/40 space-y-6 border border-gray-50">
               <div className="text-left space-y-2">
                 <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest ml-1">What dish are you looking for today?</label>

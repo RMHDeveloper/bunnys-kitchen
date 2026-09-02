@@ -7,6 +7,8 @@ import { SYSTEM_PROMPT, SUGGESTION_PROMPT } from "../constants";
 // route to moderation-only models. OpenRouter tries each id in order and falls
 // through to the next on rate-limit / error.
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Server-side proxy (Vercel function). Keeps the key off the client.
+const PROXY_URL = "/api/chat";
 // OpenRouter allows at most 3 ids here; it tries them in order.
 const MODELS = [
   "minimax/minimax-m3:free",
@@ -36,15 +38,7 @@ export const getStoredApiKey = (): string => {
 
 export const hasApiKey = (): boolean => getStoredApiKey().length > 0;
 
-const getApiKey = (): string => {
-  const key = getStoredApiKey();
-  if (!key) {
-    throw new Error(
-      "NO_API_KEY: Add your OpenRouter API key to start cooking."
-    );
-  }
-  return key;
-};
+const NO_KEY_ERROR = "NO_API_KEY: Add your OpenRouter API key to start cooking.";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -65,37 +59,61 @@ const isDegenerate = (text: string): boolean => {
   return unique / tokens.length < 0.15;
 };
 
+const buildPayload = (
+  messages: ChatMessage[],
+  options: { temperature?: number; json?: boolean }
+) => ({
+  models: MODELS,
+  messages,
+  temperature: options.temperature ?? 0.7,
+  max_tokens: 1400,
+  frequency_penalty: 0.5,
+  presence_penalty: 0.3,
+  reasoning: { exclude: true }, // don't leak chain-of-thought into content
+  ...(options.json ? { response_format: { type: "json_object" } } : {}),
+});
+
 const callOnce = async (
   messages: ChatMessage[],
   options: { temperature?: number; json?: boolean }
 ): Promise<string> => {
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getApiKey()}`,
-      "Content-Type": "application/json",
-      // Optional attribution headers used by OpenRouter for rankings.
-      "HTTP-Referer":
-        typeof window !== "undefined"
-          ? window.location.origin
-          : "https://bunnys-kitchen.vercel.app",
-      "X-Title": "Bunny's Kitchen",
-    },
-    body: JSON.stringify({
-      models: MODELS,
-      messages,
-      temperature: options.temperature ?? 0.7,
-      max_tokens: 1400,
-      frequency_penalty: 0.5,
-      presence_penalty: 0.3,
-      reasoning: { exclude: true }, // don't leak chain-of-thought into content
-      ...(options.json ? { response_format: { type: "json_object" } } : {}),
-    }),
-  });
+  const payload = buildPayload(messages, options);
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    console.error("OpenRouter API Error:", res.status, detail);
+  // 1. Try the server-side proxy (production). The key lives on the server.
+  let res: Response | null = await fetch(PROXY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).catch(() => null);
+
+  const proxyUnavailable = !res || res.status === 404;
+  const proxyMissingKey =
+    !!res && res.status === 500 &&
+    (await res.clone().text().catch(() => "")).includes("OPENROUTER_API_KEY");
+
+  // 2. Fall back to a direct browser call (local dev, or proxy not configured)
+  //    using a build-time / pasted key.
+  if (proxyUnavailable || proxyMissingKey) {
+    const key = getStoredApiKey();
+    if (!key) throw new Error(NO_KEY_ERROR);
+    res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer":
+          typeof window !== "undefined"
+            ? window.location.origin
+            : "https://bunny-kitchen.thermh.in",
+        "X-Title": "Bunny's Kitchen",
+      },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  if (!res || !res.ok) {
+    const detail = res ? await res.text().catch(() => "") : "";
+    console.error("OpenRouter API Error:", res?.status, detail);
     throw new Error("Failed to communicate with the heritage engine.");
   }
 
