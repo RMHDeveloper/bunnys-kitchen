@@ -1,20 +1,74 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { SYSTEM_PROMPT, SUGGESTION_PROMPT } from "../constants";
 
+// OpenRouter (OpenAI-compatible) API.
+// `openrouter/free` auto-routes each request to an available free model that
+// supports the required features (text + image input, structured output, etc.).
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL = "openrouter/free";
+
+const getApiKey = (): string => {
+  const key = import.meta.env?.VITE_OPENROUTER_API_KEY as string | undefined;
+  if (!key) {
+    throw new Error("Missing VITE_OPENROUTER_API_KEY. Add it to your .env file.");
+  }
+  return key;
+};
+
+interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+const chat = async (
+  messages: ChatMessage[],
+  options: { temperature?: number; json?: boolean } = {}
+): Promise<string> => {
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getApiKey()}`,
+      "Content-Type": "application/json",
+      // Optional attribution headers used by OpenRouter for rankings.
+      "HTTP-Referer":
+        typeof window !== "undefined"
+          ? window.location.origin
+          : "https://bunnys-kitchen.vercel.app",
+      "X-Title": "Bunny's Kitchen",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      temperature: options.temperature ?? 0.8,
+      ...(options.json ? { response_format: { type: "json_object" } } : {}),
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error("OpenRouter API Error:", res.status, detail);
+    throw new Error("Failed to communicate with the heritage engine.");
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "";
+};
+
+// Strips ```json ... ``` fences some models wrap JSON in.
+const parseJson = (raw: string): any => {
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  return JSON.parse(cleaned);
+};
+
 export const fetchRecipe = async (
-  ingredient: string, 
-  state: string, 
-  servings: string, 
-  language: string, 
+  ingredient: string,
+  state: string,
+  servings: string,
+  language: string,
   allergies: string,
   isAlternative: boolean = false,
   isDiet: boolean = false
 ): Promise<string> => {
-  // Prefer Vite env in the browser, fall back to process.env for Node
-  const apiKey = (import.meta.env?.VITE_GEMINI_API_KEY as string) || process.env.API_KEY;
-  const ai = new GoogleGenAI({ apiKey });
-  
   const userPrompt = `
 Language to use for the response: ${language}
 Dish/Ingredient requested: ${ingredient}
@@ -30,102 +84,43 @@ REQUIREMENTS:
 3. Quantities must serve ${servings}.
 `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: userPrompt,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        temperature: 0.8,
-      },
-    });
-
-    return response.text || "No recipe found.";
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw new Error("Failed to communicate with the heritage engine.");
-  }
+  const text = await chat(
+    [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+    { temperature: 0.8 }
+  );
+  return text || "No recipe found.";
 };
 
 export const fetchFamousSuggestion = async (ingredient: string): Promise<any> => {
-  // Prefer Vite env in the browser, fall back to process.env for Node
-  const apiKey = (import.meta.env?.VITE_GEMINI_API_KEY as string) || process.env.API_KEY;
-  const ai = new GoogleGenAI({ apiKey });
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Find an iconic South Indian dish for: ${ingredient}`,
-      config: {
-        systemInstruction: SUGGESTION_PROMPT,
-        responseMimeType: "application/json",
-        // Adding responseSchema for better structured output and consistency
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            dish: {
-              type: Type.STRING,
-              description: 'The name of the dish.'
-            },
-            state: {
-              type: Type.STRING,
-              description: 'The state of origin.'
-            },
-            place: {
-              type: Type.STRING,
-              description: 'Specific region or place.'
-            },
-            desc: {
-              type: Type.STRING,
-              description: 'Short description of the dish.'
-            },
-            keywords: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'Search keywords.'
-            }
-          },
-          required: ["dish", "state", "place", "desc", "keywords"],
-          propertyOrdering: ["dish", "state", "place", "desc", "keywords"]
-        }
-      },
-    });
-    return JSON.parse(response.text || '{}');
+    const schemaHint = `
+Return ONLY a JSON object with exactly these keys:
+{
+  "dish": "The name of the dish.",
+  "state": "The state of origin.",
+  "place": "Specific region or place.",
+  "desc": "Short description of the dish.",
+  "keywords": ["search", "keywords"]
+}`;
+    const text = await chat(
+      [
+        { role: "system", content: `${SUGGESTION_PROMPT}\n${schemaHint}` },
+        { role: "user", content: `Find an iconic South Indian dish for: ${ingredient}` },
+      ],
+      { temperature: 0.7, json: true }
+    );
+    return parseJson(text || "{}");
   } catch (error) {
     console.error("Discovery Error:", error);
     return null;
   }
 };
 
-export const generateRecipeImage = async (dishName: string): Promise<string | null> => {
-  // Prefer Vite env in the browser, fall back to process.env for Node
-  const apiKey = (import.meta.env?.VITE_GEMINI_API_KEY as string) || process.env.API_KEY;
-  const ai = new GoogleGenAI({ apiKey });
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            text: `High-quality, appetizing professional food photography of ${dishName}. Authentic South Indian plating on a banana leaf or clay plate. Warm, natural lighting.`,
-          },
-        ],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1"
-        }
-      }
-    });
-
-    // Iterate through candidates and parts to find the image part
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error("Image Generation Error:", error);
-    return null;
-  }
+export const generateRecipeImage = async (_dishName: string): Promise<string | null> => {
+  // OpenRouter's free tier has no image-generation models, so we skip this.
+  // The UI already renders the recipe gracefully without a photo.
+  return null;
 };

@@ -2,8 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Setting base to './' ensures that all asset paths (JS, CSS, Images) 
-// are relative, allowing the app to be hosted in any subfolder.
+// base: '/' keeps asset paths absolute from the domain root (works on Vercel).
 export default defineConfig({
   plugins: [react()],
   base: '/',
