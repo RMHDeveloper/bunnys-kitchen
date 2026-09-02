@@ -162,7 +162,7 @@ const App: React.FC = () => {
                   value={ingredient}
                   onChange={(e) => setIngredient(e.target.value)}
                   placeholder="e.g. Masala Dosa, Biryani..."
-                  className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-[#1e3a2f] text-lg font-bold transition-all placeholder:font-medium"
+                  className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-none outline-none focus:outline-none focus:ring-2 focus:ring-[#1e3a2f] text-lg font-bold transition-all placeholder:font-medium"
                   required
                 />
               </div>
@@ -178,7 +178,7 @@ const App: React.FC = () => {
                   <select
                     value={allergies || 'None'}
                     onChange={(e) => handleAllergyChange(e.target.value)}
-                    className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-[#1e3a2f] text-lg font-bold appearance-none cursor-pointer"
+                    className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-none outline-none focus:outline-none focus:ring-2 focus:ring-[#1e3a2f] text-lg font-bold appearance-none cursor-pointer"
                   >
                     {INITIAL_ALLERGIES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     <option value="ADD_NEW">+ Add Custom...</option>
@@ -190,7 +190,7 @@ const App: React.FC = () => {
                     placeholder="Type allergy..."
                     value={allergies}
                     onChange={(e) => setAllergies(e.target.value)}
-                    className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-[#1e3a2f] text-lg font-bold"
+                    className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-none outline-none focus:outline-none focus:ring-2 focus:ring-[#1e3a2f] text-lg font-bold"
                   />
                 )}
               </div>
