@@ -72,7 +72,6 @@ const App: React.FC = () => {
   const [suggestion, setSuggestion] = useState<any>(null);
   const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
   const [apiKey, setApiKey] = useState(getStoredApiKey());
-  const [showKeyCard, setShowKeyCard] = useState(false);
 
   const saveApiKey = (key: string) => {
     try {
@@ -82,8 +81,7 @@ const App: React.FC = () => {
       /* ignore */
     }
     setApiKey(key);
-    setShowKeyCard(false);
-    if (key && (status === AppStatus.ERROR)) setStatus(AppStatus.IDLE);
+    if (key && status === AppStatus.ERROR) setStatus(AppStatus.IDLE);
   };
 
   const startDiscovery = (e: React.FormEvent) => {
@@ -179,37 +177,16 @@ const App: React.FC = () => {
           <h1 className="text-xl font-extrabold text-[#1e3a2f] tracking-tight uppercase">Bunny's Kitchen</h1>
         </div>
         
-        <div className="flex items-center gap-3">
+        {status !== AppStatus.IDLE && (
           <button
-            onClick={() => setShowKeyCard(true)}
-            className="px-4 py-2.5 rounded-2xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all font-extrabold text-[11px] uppercase tracking-widest"
-            title="Set OpenRouter API key"
+            onClick={goBack}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#1e3a2f] text-white hover:bg-[#2d4a3e] transition-all font-extrabold text-[11px] uppercase tracking-widest shadow-lg shadow-[#1e3a2f]/10"
           >
-            {apiKey ? 'API Key' : 'Add Key'}
+            <Icons.Back />
+            <span>Back</span>
           </button>
-          {status !== AppStatus.IDLE && (
-            <button
-              onClick={goBack}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#1e3a2f] text-white hover:bg-[#2d4a3e] transition-all font-extrabold text-[11px] uppercase tracking-widest shadow-lg shadow-[#1e3a2f]/10"
-            >
-              <Icons.Back />
-              <span>Back</span>
-            </button>
-          )}
-        </div>
+        )}
       </header>
-
-      {showKeyCard && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6 fade-in" onClick={() => setShowKeyCard(false)}>
-          <div onClick={(e) => e.stopPropagation()}>
-            <ApiKeyCard
-              current={apiKey}
-              onSave={saveApiKey}
-              onCancel={() => setShowKeyCard(false)}
-            />
-          </div>
-        </div>
-      )}
 
       <main className="flex-1 overflow-y-auto flex flex-col items-center min-h-0">
         {status === AppStatus.IDLE && (
