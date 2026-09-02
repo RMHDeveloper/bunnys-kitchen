@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { AppStatus } from './types';
-import { fetchRecipe, fetchFamousSuggestion, generateRecipeImage, getStoredApiKey, hasApiKey, API_KEY_STORAGE } from './services/geminiService';
+import { fetchRecipe, fetchFamousSuggestion, generateRecipeImage, getStoredApiKey, API_KEY_STORAGE } from './services/geminiService';
 import { Icons, FAMOUS_DELICACIES } from './constants';
 import RecipeDisplay from './components/RecipeDisplay';
 
@@ -72,7 +72,7 @@ const App: React.FC = () => {
   const [suggestion, setSuggestion] = useState<any>(null);
   const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
   const [apiKey, setApiKey] = useState(getStoredApiKey());
-  const [showKeyCard, setShowKeyCard] = useState(!hasApiKey());
+  const [showKeyCard, setShowKeyCard] = useState(false);
 
   const saveApiKey = (key: string) => {
     try {
@@ -200,12 +200,12 @@ const App: React.FC = () => {
       </header>
 
       {showKeyCard && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6 fade-in" onClick={() => hasApiKey() && setShowKeyCard(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6 fade-in" onClick={() => setShowKeyCard(false)}>
           <div onClick={(e) => e.stopPropagation()}>
             <ApiKeyCard
               current={apiKey}
               onSave={saveApiKey}
-              onCancel={hasApiKey() ? () => setShowKeyCard(false) : undefined}
+              onCancel={() => setShowKeyCard(false)}
             />
           </div>
         </div>
@@ -223,6 +223,16 @@ const App: React.FC = () => {
                 <span className="text-[#d4a373]">Kitchen</span>
               </h2>
             </div>
+
+            {!apiKey && (
+              <button
+                onClick={() => setShowKeyCard(true)}
+                className="w-full flex items-center justify-between gap-3 bg-[#1e3a2f] text-white px-5 py-4 rounded-2xl text-left hover:bg-[#2d4a3e] transition-colors"
+              >
+                <span className="text-[11px] font-extrabold uppercase tracking-widest">Add your OpenRouter API key to begin</span>
+                <Icons.ArrowRight />
+              </button>
+            )}
 
             <form onSubmit={startDiscovery} className="bg-white p-6 md:p-8 rounded-[40px] shadow-2xl shadow-gray-200/40 space-y-6 border border-gray-50">
               <div className="text-left space-y-2">
