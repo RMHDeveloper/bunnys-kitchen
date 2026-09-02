@@ -16,17 +16,22 @@ const MODELS = [
 
 export const API_KEY_STORAGE = "bk_openrouter_key";
 
+// Build-time key. Written as a plain member access (no `?.`) so Vite statically
+// replaces it at build time — this is what a Vercel env var lands in.
+const BUILD_KEY = (import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined) || "";
+
 // Key resolution order:
-//   1. localStorage  — pasted into the app UI, persists per browser
-//   2. VITE_OPENROUTER_API_KEY — build-time env var (.env locally, Vercel dash)
+//   1. VITE_OPENROUTER_API_KEY — build-time env var (.env locally, Vercel dash)
+//   2. localStorage — pasted into the app UI, persists per browser
 export const getStoredApiKey = (): string => {
+  if (BUILD_KEY.trim()) return BUILD_KEY.trim();
   try {
     const fromStorage = localStorage.getItem(API_KEY_STORAGE);
     if (fromStorage) return fromStorage.trim();
   } catch {
     /* localStorage unavailable (private mode, etc.) */
   }
-  return ((import.meta.env?.VITE_OPENROUTER_API_KEY as string | undefined) || "").trim();
+  return "";
 };
 
 export const hasApiKey = (): boolean => getStoredApiKey().length > 0;
