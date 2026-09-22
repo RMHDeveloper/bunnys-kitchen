@@ -1,13 +1,13 @@
 
 import { SYSTEM_PROMPT, SUGGESTION_PROMPT } from "../constants";
 
-// OpenRouter (OpenAI-compatible) API.
+// OpenRouter (OpenAI-compatible) API, called through this app's own
+// server-side proxy (api/chat.js), which forwards to the shared dashboard
+// proxy. No provider key ever lives in this app, server-side or client-side.
 // We pin known-good free models rather than the `openrouter/free` auto-router,
 // which frequently picks weak models that loop on Indic-language output or
 // route to moderation-only models. OpenRouter tries each id in order and falls
 // through to the next on rate-limit / error.
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-// Server-side proxy (Vercel function). Keeps the key off the client.
 const PROXY_URL = "/api/chat";
 // OpenRouter allows at most 3 ids here; it tries them in order.
 const MODELS = [
@@ -15,30 +15,6 @@ const MODELS = [
   "z-ai/glm-5.2:free",
   "google/gemma-4-31b-it:free",
 ];
-
-export const API_KEY_STORAGE = "bk_openrouter_key";
-
-// Build-time key. Written as a plain member access (no `?.`) so Vite statically
-// replaces it at build time — this is what a Vercel env var lands in.
-const BUILD_KEY = (import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined) || "";
-
-// Key resolution order:
-//   1. VITE_OPENROUTER_API_KEY — build-time env var (.env locally, Vercel dash)
-//   2. localStorage — pasted into the app UI, persists per browser
-export const getStoredApiKey = (): string => {
-  if (BUILD_KEY.trim()) return BUILD_KEY.trim();
-  try {
-    const fromStorage = localStorage.getItem(API_KEY_STORAGE);
-    if (fromStorage) return fromStorage.trim();
-  } catch {
-    /* localStorage unavailable (private mode, etc.) */
-  }
-  return "";
-};
-
-export const hasApiKey = (): boolean => getStoredApiKey().length > 0;
-
-const NO_KEY_ERROR = "NO_API_KEY: Add your OpenRouter API key to start cooking.";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -74,46 +50,8 @@ const buildPayload = (messages: ChatMessage[], options: ChatOptions) => ({
   frequency_penalty: 0.5,
   presence_penalty: 0.3,
   reasoning: { exclude: true }, // don't leak chain-of-thought into content
-  ...(options.stream ? { stream: true } : {}),
   ...(options.json ? { response_format: { type: "json_object" } } : {}),
 });
-
-// Reads an OpenRouter SSE stream, accumulating delta content and reporting
-// progress as it arrives.
-const readStream = async (
-  body: ReadableStream<Uint8Array>,
-  onProgress?: (partial: string) => void
-): Promise<string> => {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let full = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const data = trimmed.slice(5).trim();
-      if (data === "[DONE]") continue;
-      try {
-        const json = JSON.parse(data);
-        const delta = json.choices?.[0]?.delta?.content;
-        if (delta) {
-          full += delta;
-          onProgress?.(full);
-        }
-      } catch {
-        /* keep-alive comment or partial chunk */
-      }
-    }
-  }
-  return full.trim();
-};
 
 const callOnce = async (
   messages: ChatMessage[],
@@ -121,37 +59,11 @@ const callOnce = async (
 ): Promise<string> => {
   const payload = buildPayload(messages, options);
 
-  // 1. Try the server-side proxy (production). The key lives on the server.
-  let res: Response | null = await fetch(PROXY_URL, {
+  const res: Response | null = await fetch(PROXY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   }).catch(() => null);
-
-  const proxyUnavailable = !res || res.status === 404;
-  const proxyMissingKey =
-    !!res && res.status === 500 &&
-    (await res.clone().text().catch(() => "")).includes("OPENROUTER_API_KEY");
-
-  // 2. Fall back to a direct browser call (local dev, or proxy not configured)
-  //    using a build-time / pasted key.
-  if (proxyUnavailable || proxyMissingKey) {
-    const key = getStoredApiKey();
-    if (!key) throw new Error(NO_KEY_ERROR);
-    res = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer":
-          typeof window !== "undefined"
-            ? window.location.origin
-            : "https://bunny-kitchen.thermh.in",
-        "X-Title": "Bunny's Kitchen",
-      },
-      body: JSON.stringify(payload),
-    });
-  }
 
   if (!res || !res.ok) {
     const detail = res ? await res.text().catch(() => "") : "";
@@ -159,12 +71,13 @@ const callOnce = async (
     throw new Error("Failed to communicate with the heritage engine.");
   }
 
-  if (options.stream && res.body) {
-    return readStream(res.body, options.onProgress);
-  }
-
   const data = await res.json();
-  return (data.choices?.[0]?.message?.content ?? "").trim();
+  const content = (data.choices?.[0]?.message?.content ?? "").trim();
+  // The dashboard proxy always returns a single JSON response (no SSE), so
+  // report the full text as one progress update to keep the streaming UI path
+  // working, just without incremental token-by-token updates.
+  if (options.stream) options.onProgress?.(content);
+  return content;
 };
 
 const chat = async (

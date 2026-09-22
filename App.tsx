@@ -1,44 +1,9 @@
 
 import React, { useState } from 'react';
 import { AppStatus } from './types';
-import { fetchRecipe, fetchFamousSuggestion, generateRecipeImage, getStoredApiKey, API_KEY_STORAGE } from './services/geminiService';
+import { fetchRecipe, fetchFamousSuggestion, generateRecipeImage } from './services/geminiService';
 import { Icons, FAMOUS_DELICACIES } from './constants';
 import RecipeDisplay from './components/RecipeDisplay';
-
-const ApiKeyCard: React.FC<{ current: string; onSave: (key: string) => void; onCancel?: () => void }> = ({ current, onSave, onCancel }) => {
-  const [value, setValue] = useState(current);
-  return (
-    <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-xl border border-gray-100 space-y-4 text-left max-w-md mx-auto">
-      <div className="space-y-1">
-        <h3 className="text-lg font-black text-[#1e3a2f] uppercase tracking-tight">OpenRouter API Key</h3>
-        <p className="text-xs text-gray-500 font-medium leading-relaxed">
-          Get a free key at <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer" className="text-[#1e3a2f] underline font-bold">openrouter.ai/settings/keys</a>, paste it below. It stays in this browser only.
-        </p>
-      </div>
-      <input
-        type="password"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="sk-or-v1-..."
-        className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border-none outline-none focus:outline-none focus:ring-2 focus:ring-[#1e3a2f] text-sm font-bold"
-      />
-      <div className="flex gap-3">
-        <button
-          onClick={() => onSave(value.trim())}
-          disabled={!value.trim()}
-          className="flex-1 py-4 bg-[#1e3a2f] text-white rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em] disabled:opacity-40 hover:bg-[#2d4a3e] transition-colors"
-        >
-          Save Key
-        </button>
-        {onCancel && (
-          <button onClick={onCancel} className="px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em] hover:bg-gray-200 transition-colors">
-            Cancel
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
 
 const STATES = [
   { id: 'Tamil Nadu', label: 'Tamil Nadu', emoji: '🍱', desc: 'Temple Traditions', color: 'bg-orange-50', text: 'text-orange-900', border: 'hover:border-orange-200' },
@@ -71,19 +36,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<any>(null);
   const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
-  const [apiKey, setApiKey] = useState(getStoredApiKey());
   const [streaming, setStreaming] = useState(false);
-
-  const saveApiKey = (key: string) => {
-    try {
-      if (key) localStorage.setItem(API_KEY_STORAGE, key);
-      else localStorage.removeItem(API_KEY_STORAGE);
-    } catch {
-      /* ignore */
-    }
-    setApiKey(key);
-    if (key && status === AppStatus.ERROR) setStatus(AppStatus.IDLE);
-  };
 
   const startDiscovery = (e: React.FormEvent) => {
     e.preventDefault();
@@ -408,16 +361,10 @@ const App: React.FC = () => {
              <div className="text-center space-y-2 max-w-sm">
                 <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Heritage Engine Stall</h3>
                 <p className="text-sm text-gray-500 font-medium">
-                  {error?.includes('NO_API_KEY')
-                    ? 'Add your OpenRouter API key to start cooking.'
-                    : (error || "The kitchen is temporarily closed.")}
+                  {error || "The kitchen is temporarily closed."}
                 </p>
              </div>
-             {error?.includes('NO_API_KEY') ? (
-               <ApiKeyCard current={apiKey} onSave={saveApiKey} />
-             ) : (
-               <button onClick={reset} className="px-10 py-5 bg-[#1e3a2f] text-white rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em]">Try Again</button>
-             )}
+             <button onClick={reset} className="px-10 py-5 bg-[#1e3a2f] text-white rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.2em]">Try Again</button>
           </div>
         )}
       </main>

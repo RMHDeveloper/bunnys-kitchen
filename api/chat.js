@@ -1,13 +1,18 @@
 // Vercel Edge function.
-// Streams chat-completion requests to OpenRouter so the API key stays on the
-// server (a Vercel env var) and tokens reach the browser as they are generated.
+// Forwards chat-completion requests to the shared dashboard proxy, which
+// holds the real OpenRouter API key centrally. This app no longer holds a
+// provider key itself (server-side or client-side).
 //
-// Required Vercel env var (either name works):
-//   OPENROUTER_API_KEY   ...or...   VITE_OPENROUTER_API_KEY
+// Required Vercel env vars:
+//   DASHBOARD_PROXY_URL
+//   DASHBOARD_PROXY_SECRET
+//
+// Note: the dashboard proxy always returns the provider's raw JSON response
+// (not a stream), so any `stream: true` in the incoming payload is stripped
+// before forwarding — the client-side service falls back to treating the
+// full response as a single chunk.
 
 export const config = { runtime: "edge" };
-
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export default async function handler(req) {
   if (req.method !== "POST") {
@@ -17,37 +22,43 @@ export default async function handler(req) {
     });
   }
 
-  const key =
-    process.env.OPENROUTER_API_KEY ||
-    process.env.VITE_OPENROUTER_API_KEY ||
-    "";
+  const proxyUrl = (process.env.DASHBOARD_PROXY_URL || "").trim();
+  const proxySecret = (process.env.DASHBOARD_PROXY_SECRET || "").trim();
 
-  if (!key) {
+  if (!proxyUrl || !proxySecret) {
     return new Response(
-      JSON.stringify({ error: "Server is missing OPENROUTER_API_KEY" }),
+      JSON.stringify({ error: "Server is missing DASHBOARD_PROXY_URL or DASHBOARD_PROXY_SECRET" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 
-  const body = await req.text();
+  let payload;
+  try {
+    payload = JSON.parse(await req.text());
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid request body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
-  const upstream = await fetch(OPENROUTER_URL, {
+  // The dashboard proxy returns a single JSON response, not an SSE stream.
+  const { stream, ...rest } = payload || {};
+
+  const upstream = await fetch(`${proxyUrl}/api/proxy/bunnys-kitchen`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://bunny-kitchen.thermh.in",
-      "X-Title": "Bunny's Kitchen",
+      "x-proxy-secret": proxySecret,
     },
-    body,
+    body: JSON.stringify(rest),
   });
 
-  // Pass the upstream body straight through (SSE stream or plain JSON).
-  return new Response(upstream.body, {
+  const text = await upstream.text();
+  return new Response(text, {
     status: upstream.status,
     headers: {
-      "Content-Type":
-        upstream.headers.get("Content-Type") || "application/json",
+      "Content-Type": "application/json",
       "Cache-Control": "no-cache",
     },
   });
